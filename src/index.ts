@@ -3,6 +3,8 @@ import { isValidURL } from "./lib/valid";
 import { getBrowserDebuggingURL } from "./lib/browser";
 import { htmlParser } from "./lib/parser";
 
+import { pluginRegistry } from "./plugins";
+
 const authMiddleware: MiddlewareHandler = async (c, next) => {
   const authorization = c.req.header("Authorization");
   const bearerToken = authorization?.startsWith("Bearer ")
@@ -62,13 +64,6 @@ app.post("/read", authMiddleware, async (c) => {
     let navigatedUrl: string | null = null;
     let navigatedTitle: string | null = null;
     let navigationFailed: Error | null = null;
-    let resolveNavigated: (() => void) | null = null;
-    let rejectNavigated: ((err: Error) => void) | null = null;
-
-    const navigated = new Promise<void>((resolve, reject) => {
-      resolveNavigated = resolve;
-      rejectNavigated = reject;
-    });
 
     const view = new Bun.WebView({
       backend: {
@@ -78,25 +73,44 @@ app.post("/read", authMiddleware, async (c) => {
       headless: true,
     });
 
-    view.onNavigated = (nextUrl, nextTitle) => {
-      navigatedUrl = nextUrl;
-      navigatedTitle = nextTitle;
-      resolveNavigated?.();
-    };
     view.onNavigationFailed = (err) => {
       navigationFailed = err;
-      rejectNavigated?.(err);
     };
 
-    try {
-      await view.navigate(url);
-      await withTimeout(navigated, Math.min(waitMs, 5000), "onNavigated");
+    async function navigateAndWait(target: string, timeout: number) {
+      navigationFailed = null;
+      const p = new Promise<void>((resolve, reject) => {
+        view.onNavigated = (nextUrl, nextTitle) => {
+          navigatedUrl = nextUrl;
+          navigatedTitle = nextTitle;
+          resolve();
+        };
+        view.onNavigationFailed = (err) => {
+          navigationFailed = err;
+          reject(err);
+        };
+      });
+      await view.navigate(target);
+      await withTimeout(p, timeout, "onNavigated");
+      if (navigationFailed) throw navigationFailed;
+    }
 
-      if (navigationFailed) {
-        throw navigationFailed;
+    try {
+      await navigateAndWait("about:blank", 5000);
+
+      const matchedUA = pluginRegistry.resolve(url);
+      if (matchedUA) {
+        await view.cdp("Network.setUserAgentOverride", { userAgent: matchedUA });
       }
 
-      const title = await view.evaluate("document.title");
+      await navigateAndWait(url, Math.min(waitMs, 5000));
+
+      const title = await view.evaluate(`document.title
+        || document.querySelector('meta[property="og:title"]')?.content
+        || document.querySelector('meta[name="twitter:title"]')?.content
+        || document.querySelector('h1')?.textContent?.trim()
+        || document.querySelector('h2')?.textContent?.trim()
+        || ""`);
       let finalUrl = navigatedUrl ?? url;
 
       const html = await view.evaluate("document.documentElement.outerHTML");
