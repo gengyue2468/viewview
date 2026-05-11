@@ -111,16 +111,15 @@ app.post("/read", authMiddleware, async (c) => {
         || document.querySelector('h1')?.textContent?.trim()
         || document.querySelector('h2')?.textContent?.trim()
         || ""`);
-      let finalUrl = navigatedUrl ?? url;
 
       const html = await view.evaluate("document.documentElement.outerHTML");
       const text = await view.evaluate("document.documentElement.innerText");
 
       const rawText =
-        (await htmlParser(finalUrl, html as string)) || (text as string);
+        (await htmlParser(url, html as string)) || (text as string);
       const finalText = `---
 title: ${title || "无题"}
-url: ${finalUrl}
+url: ${url}
 ---
 
 ${rawText}
