@@ -38,7 +38,7 @@ app.post("/read", authMiddleware, async (c) => {
     return c.json({ error: "URL 无效欸" }, 400);
   }
 
-  const waitMs = Number(c.req.query("wait") ?? "30000");
+  const waitMs = Number(c.req.query("wait") ?? "120000");
 
   async function withTimeout<T>(
     promise: Promise<T>,
