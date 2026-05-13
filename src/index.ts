@@ -103,7 +103,7 @@ app.post("/read", authMiddleware, async (c) => {
         await view.cdp("Network.setUserAgentOverride", { userAgent: matchedUA });
       }
 
-      await navigateAndWait(url, Math.min(waitMs, 5000));
+      await navigateAndWait(url, waitMs);
 
       const title = await view.evaluate(`document.title
         || document.querySelector('meta[property="og:title"]')?.content
