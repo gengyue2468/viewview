@@ -38,7 +38,7 @@ app.post("/read", authMiddleware, async (c) => {
     return c.json({ error: "URL 无效欸" }, 400);
   }
 
-  const waitMs = Number(c.req.query("wait") ?? "120000");
+  const waitMs = Number(c.req.query("wait") ?? "180000");
 
   async function withTimeout<T>(
     promise: Promise<T>,
@@ -100,7 +100,9 @@ app.post("/read", authMiddleware, async (c) => {
 
       const matchedUA = pluginRegistry.resolve(url);
       if (matchedUA) {
-        await view.cdp("Network.setUserAgentOverride", { userAgent: matchedUA });
+        await view.cdp("Network.setUserAgentOverride", {
+          userAgent: matchedUA,
+        });
       }
 
       await navigateAndWait(url, waitMs);
@@ -111,7 +113,16 @@ app.post("/read", authMiddleware, async (c) => {
         || document.querySelector('h1')?.textContent?.trim()
         || document.querySelector('h2')?.textContent?.trim()
         || ""`);
+      const description =
+        await view.evaluate(`document.querySelector('meta[name="description"]')?.content
+        || document.querySelector('meta[property="og:description"]')?.content
+        || document.querySelector('meta[name="twitter:description"]')?.content
+        || document.querySelector('p')?.textContent?.trim()
+        || ""`);
 
+      const authors: string[] = await view.evaluate(
+        `Array.from(document.querySelectorAll('meta[name="author"], meta[property="article:author"]')).map(el => el.content).filter(Boolean)`,
+      );
       const html = await view.evaluate("document.documentElement.outerHTML");
       const text = await view.evaluate("document.documentElement.innerText");
 
@@ -119,6 +130,8 @@ app.post("/read", authMiddleware, async (c) => {
         (await htmlParser(url, html as string)) || (text as string);
       const finalText = `---
 title: ${title || "无题"}
+description: ${description || "无描述"}
+${authors.length > 0 ? `author: ${authors.join(", ")}` : ""}
 url: ${url}
 ---
 
