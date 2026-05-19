@@ -52,12 +52,30 @@ function normalizeUrl(rawUrl: string) {
   return rawUrl.replace(/&amp;/g, "&").trim();
 }
 
+export function normalizeInputURL(rawUrl: string) {
+  const url = normalizeUrl(rawUrl);
+
+  if (/^https?:\/\//i.test(url)) {
+    return url;
+  }
+
+  if (/^(?:\/\/|www\.)[\w.-]+(?:\.[\w.-]+)+(?:[/?#].*)?$/i.test(url)) {
+    return `https://${url.replace(/^\/\//, "")}`;
+  }
+
+  if (/^[\w.-]+(?:\.[\w.-]+)+(?:\:[0-9]+)?(?:[/?#].*)?$/i.test(url)) {
+    return `https://${url}`;
+  }
+
+  return url;
+}
+
 export function isValidURL(rawUrl: string) {
   if (!rawUrl) {
     return false;
   }
 
-  const url = normalizeUrl(rawUrl);
+  const url = normalizeInputURL(rawUrl);
 
   if (!/^https?:\/\//i.test(url)) {
     return false;
