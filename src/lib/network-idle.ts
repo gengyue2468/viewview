@@ -1,6 +1,6 @@
 export async function waitForNetworkIdle(
   view: Bun.WebView,
-  idleTime = 2000,
+  idleTime = 500,
 ): Promise<void> {
   let active = 0;
   let timer: ReturnType<typeof setTimeout> | null = null;

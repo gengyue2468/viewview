@@ -89,7 +89,7 @@ async function readPage(c: any, url: string) {
   }
 
   const waitMs = Number(c.req.query("wait") ?? "240000");
-  const idleMs = Number(c.req.query("idle") ?? "2000");
+  const idleMs = Number(c.req.query("idle") ?? "500");
 
   try {
     let navigationFailed: Error | null = null;
