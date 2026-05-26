@@ -117,6 +117,13 @@ async function readPage(c: any, url: string) {
           reject(err);
         };
       });
+
+      let tracker: NetworkIdleTracker | null = null;
+      if (idleTime && idleTime > 0) {
+        tracker = new NetworkIdleTracker(view, { idleTime });
+        await tracker.start();
+      }
+
       await view.navigate(target);
       await withTimeout(p, timeout, "onNavigated");
       if (navigationFailed) throw navigationFailed;
@@ -126,9 +133,7 @@ async function readPage(c: any, url: string) {
         "pageLoad",
       );
 
-      if (idleTime && idleTime > 0) {
-        const tracker = new NetworkIdleTracker(view, { idleTime });
-        await tracker.start();
+      if (tracker) {
         await withTimeout(tracker.waitForIdle(), timeout, "networkIdle");
         tracker.stop();
       }
