@@ -1,7 +1,7 @@
 import { Hono, MiddlewareHandler } from "hono";
 import { isValidURL, normalizeInputURL } from "./lib/valid";
 import { getBrowserDebuggingURL } from "./lib/browser";
-import { NetworkIdleTracker } from "./lib/network-idle";
+import { waitForNetworkIdle } from "./lib/network-idle";
 import { htmlParser } from "./lib/parser";
 
 import { pluginRegistry } from "./plugins";
@@ -109,33 +109,24 @@ async function readPage(c: any, url: string) {
     async function navigateAndWait(target: string, timeout: number, idleTime?: number) {
       navigationFailed = null;
       const p = new Promise<void>((resolve, reject) => {
-        view.onNavigated = () => {
-          resolve();
-        };
+        view.onNavigated = () => resolve();
         view.onNavigationFailed = (err) => {
           navigationFailed = err;
           reject(err);
         };
       });
 
-      let tracker: NetworkIdleTracker | null = null;
       if (idleTime && idleTime > 0) {
-        tracker = new NetworkIdleTracker(view, { idleTime });
-        await tracker.start();
+        await view.cdp("Network.enable");
       }
 
       await view.navigate(target);
       await withTimeout(p, timeout, "onNavigated");
       if (navigationFailed) throw navigationFailed;
-      await withTimeout(
-        waitForPageLoadComplete(view, timeout),
-        timeout,
-        "pageLoad",
-      );
+      await withTimeout(waitForPageLoadComplete(view, timeout), timeout, "pageLoad");
 
-      if (tracker) {
-        await withTimeout(tracker.waitForIdle(), timeout, "networkIdle");
-        tracker.stop();
+      if (idleTime && idleTime > 0) {
+        await withTimeout(waitForNetworkIdle(view, idleTime), timeout, "networkIdle");
       }
     }
 
