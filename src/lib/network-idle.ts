@@ -8,7 +8,8 @@ class NetworkIdleTracker {
   private resolve: (() => void) | null = null;
   private idleTime: number;
   private view: Bun.WebView;
-  private handler: EventListener | null = null;
+  private onRequestStart: EventListener | null = null;
+  private onRequestEnd: EventListener | null = null;
 
   constructor(view: Bun.WebView, options?: NetworkIdleOptions) {
     this.view = view;
@@ -18,27 +19,21 @@ class NetworkIdleTracker {
   async start(): Promise<void> {
     await this.view.cdp("Network.enable", {});
 
-    this.handler = (event: Event) => {
-      const data = (event as MessageEvent).data;
-      if (!data || typeof data.method !== "string") return;
+    this.onRequestStart = (_event: Event) => {
+      this.activeRequests++;
+      this.cancelIdleTimer();
+    };
 
-      const { method } = data;
-
-      if (method === "Network.requestWillBeSent") {
-        this.activeRequests++;
-        this.cancelIdleTimer();
-      } else if (
-        method === "Network.loadingFinished" ||
-        method === "Network.loadingFailed"
-      ) {
-        this.activeRequests = Math.max(0, this.activeRequests - 1);
-        if (this.activeRequests === 0) {
-          this.startIdleTimer();
-        }
+    this.onRequestEnd = (_event: Event) => {
+      this.activeRequests = Math.max(0, this.activeRequests - 1);
+      if (this.activeRequests === 0) {
+        this.startIdleTimer();
       }
     };
 
-    this.view.addEventListener("message", this.handler);
+    this.view.addEventListener("Network.requestWillBeSent", this.onRequestStart);
+    this.view.addEventListener("Network.loadingFinished", this.onRequestEnd);
+    this.view.addEventListener("Network.loadingFailed", this.onRequestEnd);
   }
 
   waitForIdle(): Promise<void> {
@@ -55,9 +50,14 @@ class NetworkIdleTracker {
 
   stop(): void {
     this.cancelIdleTimer();
-    if (this.handler) {
-      this.view.removeEventListener("message", this.handler);
-      this.handler = null;
+    if (this.onRequestStart) {
+      this.view.removeEventListener("Network.requestWillBeSent", this.onRequestStart);
+      this.onRequestStart = null;
+    }
+    if (this.onRequestEnd) {
+      this.view.removeEventListener("Network.loadingFinished", this.onRequestEnd);
+      this.view.removeEventListener("Network.loadingFailed", this.onRequestEnd);
+      this.onRequestEnd = null;
     }
     this.resolve = null;
   }
