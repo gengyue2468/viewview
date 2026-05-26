@@ -59,6 +59,10 @@ export function normalizeInputURL(rawUrl: string) {
     return url;
   }
 
+  if (/^https?:\/[^/]/i.test(url)) {
+    return url.replace(/^(https?:\/)(?!\/)/, "$1/");
+  }
+
   if (/^(?:\/\/|www\.)[\w.-]+(?:\.[\w.-]+)+(?:[/?#].*)?$/i.test(url)) {
     return `https://${url.replace(/^\/\//, "")}`;
   }

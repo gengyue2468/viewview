@@ -1,6 +1,7 @@
 import { Hono, MiddlewareHandler } from "hono";
 import { isValidURL, normalizeInputURL } from "./lib/valid";
 import { getBrowserDebuggingURL } from "./lib/browser";
+import { NetworkIdleTracker } from "./lib/network-idle";
 import { htmlParser } from "./lib/parser";
 
 import { pluginRegistry } from "./plugins";
@@ -88,6 +89,7 @@ async function readPage(c: any, url: string) {
   }
 
   const waitMs = Number(c.req.query("wait") ?? "240000");
+  const idleMs = Number(c.req.query("idle") ?? "2000");
 
   try {
     let navigationFailed: Error | null = null;
@@ -104,7 +106,7 @@ async function readPage(c: any, url: string) {
       navigationFailed = err;
     };
 
-    async function navigateAndWait(target: string, timeout: number) {
+    async function navigateAndWait(target: string, timeout: number, idleTime?: number) {
       navigationFailed = null;
       const p = new Promise<void>((resolve, reject) => {
         view.onNavigated = () => {
@@ -123,6 +125,13 @@ async function readPage(c: any, url: string) {
         timeout,
         "pageLoad",
       );
+
+      if (idleTime && idleTime > 0) {
+        const tracker = new NetworkIdleTracker(view, { idleTime });
+        await tracker.start();
+        await withTimeout(tracker.waitForIdle(), timeout, "networkIdle");
+        tracker.stop();
+      }
     }
 
     try {
@@ -135,7 +144,7 @@ async function readPage(c: any, url: string) {
         });
       }
 
-      await navigateAndWait(normalizedUrl, waitMs);
+      await navigateAndWait(normalizedUrl, waitMs, idleMs);
 
       const title = await view.evaluate(`document.title
           || document.querySelector('meta[property="og:title"]')?.content
