@@ -88,8 +88,10 @@ async function readPage(c: any, url: string) {
     return c.json({ error: "URL 无效欸" }, 400);
   }
 
-  const waitMs = Number(c.req.query("wait") ?? "240000");
+  const navigateMs = Number(c.req.query("navigate_timeout") ?? "10000");
+  const pageLoadMs = Number(c.req.query("page_load_timeout") ?? "15000");
   const idleMs = Number(c.req.query("idle") ?? "500");
+  const idleMaxMs = Number(c.req.query("idle_max") ?? "10000");
 
   try {
     let navigationFailed: Error | null = null;
@@ -106,7 +108,10 @@ async function readPage(c: any, url: string) {
       navigationFailed = err;
     };
 
-    async function navigateAndWait(target: string, timeout: number, idleTime?: number) {
+    async function navigateAndWait(
+      target: string,
+      opts: { navigateMs: number; pageLoadMs?: number; idleMs?: number; idleMaxMs?: number },
+    ) {
       navigationFailed = null;
       const p = new Promise<void>((resolve, reject) => {
         view.onNavigated = () => resolve();
@@ -116,22 +121,29 @@ async function readPage(c: any, url: string) {
         };
       });
 
-      if (idleTime && idleTime > 0) {
+      if (opts.idleMs && opts.idleMs > 0) {
         await view.cdp("Network.enable");
       }
 
       await view.navigate(target);
-      await withTimeout(p, timeout, "onNavigated");
+      await withTimeout(p, opts.navigateMs, "onNavigated");
       if (navigationFailed) throw navigationFailed;
-      await withTimeout(waitForPageLoadComplete(view, timeout), timeout, "pageLoad");
 
-      if (idleTime && idleTime > 0) {
-        await withTimeout(waitForNetworkIdle(view, idleTime), timeout, "networkIdle");
+      if (opts.pageLoadMs && opts.pageLoadMs > 0) {
+        await withTimeout(waitForPageLoadComplete(view, opts.pageLoadMs), opts.pageLoadMs, "pageLoad");
+      }
+
+      if (opts.idleMs && opts.idleMs > 0) {
+        await withTimeout(
+          waitForNetworkIdle(view, opts.idleMs, opts.idleMaxMs),
+          (opts.idleMaxMs ?? 10000) + 1000,
+          "networkIdle",
+        );
       }
     }
 
     try {
-      await navigateAndWait("about:blank", 5000);
+      await navigateAndWait("about:blank", { navigateMs: 5000 });
 
       const matchedUA = pluginRegistry.resolve(normalizedUrl);
       if (matchedUA) {
@@ -140,7 +152,7 @@ async function readPage(c: any, url: string) {
         });
       }
 
-      await navigateAndWait(normalizedUrl, waitMs, idleMs);
+      await navigateAndWait(normalizedUrl, { navigateMs, pageLoadMs, idleMs, idleMaxMs });
 
       const title = await view.evaluate(`document.title
           || document.querySelector('meta[property="og:title"]')?.content
