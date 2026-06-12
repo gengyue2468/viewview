@@ -320,17 +320,21 @@ app.get("/", (c) => {
   return c.text(`# viewview
 
 ## Usage:
+
 ${endpoints.map((e) => `- ${e}`).join("\n")}
 
 ## Response:
+
 - Content-Type: text/plain
 - Body: Markdown text with frontmatter containing metadata like title, description, authors, etc.
 
 ## Example:
+
 ${method.allowGet ? "- GET /https%3A%2F%2Fexample.com" : ""}
 ${method.allowPost ? '- POST /read with body { "url": "https://example.com" }' : ""}
 
 ## Health Check:
+
 - GET /health
 
 [View on GitHub](https://github.com/gengyue2468/viewview)
