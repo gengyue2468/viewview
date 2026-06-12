@@ -326,4 +326,5 @@ app.post("/read", authMiddleware, async (c) => {
 Bun.serve({
   fetch: app.fetch,
   port: 9233,
+  idleTimeout: 120,
 });
