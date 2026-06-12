@@ -1,5 +1,4 @@
 import { Hono, MiddlewareHandler } from "hono";
-import { stream } from "hono/streaming";
 import { isValidURL, normalizeInputURL } from "./lib/valid";
 import { getBrowserDebuggingURL } from "./lib/browser";
 import { htmlParser } from "./lib/parser";
@@ -129,134 +128,143 @@ async function readPage(c: any, url: string) {
   const stableThreshold = Number(c.req.query("stable_threshold") ?? "3");
 
   try {
-    const debugUrl = await getBrowserDebuggingURL();
+    let partial = false;
 
-    return stream(c, async (stream) => {
-      let partial = false;
-
-      const view = new Bun.WebView({
-        backend: { type: "chrome", url: debugUrl },
-        headless: true,
-      });
-
-      try {
-        if (await navigateToURL(view, "about:blank", 5000)) {
-          partial = true;
-        }
-
-        const matchedUA = pluginRegistry.resolve(normalizedUrl);
-        if (matchedUA) {
-          await view.cdp("Network.setUserAgentOverride", {
-            userAgent: matchedUA,
-          });
-        }
-
-        if (await navigateToURL(view, normalizedUrl, navigateMs)) {
-          partial = true;
-        }
-
-        let lastLen = -1;
-        let stableCount = 0;
-        let frontmatterDone = false;
-        const pollStarted = Date.now();
-
-        while (true) {
-          const elapsed = Date.now() - pollStarted;
-          if (elapsed >= maxWaitMs) {
-            partial = true;
-            break;
-          }
-
-          let contentLen = 0;
-          try {
-            contentLen = await view.evaluate(
-              "document.body?.innerText?.length ?? 0",
-            );
-          } catch {}
-
-          if (!frontmatterDone && contentLen > 0) {
-            try {
-              const title =
-                await view.evaluate(`document.title
-                || document.querySelector('meta[property="og:title"]')?.content
-                || document.querySelector('meta[name="twitter:title"]')?.content
-                || document.querySelector('h1')?.textContent?.trim()
-                || document.querySelector('h2')?.textContent?.trim()
-                || ""`);
-
-              const description = await view.evaluate(
-                `document.querySelector('meta[name="description"]')?.content
-                || document.querySelector('meta[property="og:description"]')?.content
-                || document.querySelector('meta[name="twitter:description"]')?.content
-                || document.querySelector('p')?.textContent?.trim()
-                || ""`,
-              );
-
-              const pageMeta = (await view.evaluate(`({
-                siteName: document.querySelector('meta[property="og:site_name"]')?.content || document.querySelector('meta[name="application-name"]')?.content || "",
-                pageType: document.querySelector('meta[property="og:type"]')?.content || "",
-                publishedTime: document.querySelector('meta[property="article:published_time"]')?.content || document.querySelector('meta[property="og:published_time"]')?.content || document.querySelector('meta[name="pubdate"]')?.content || "",
-                modifiedTime: document.querySelector('meta[property="article:modified_time"]')?.content || document.querySelector('meta[property="og:updated_time"]')?.content || document.querySelector('meta[name="lastmod"]')?.content || "",
-                keywords: document.querySelector('meta[name="keywords"]')?.content || document.querySelector('meta[property="article:tag"]')?.content || "",
-                section: document.querySelector('meta[property="article:section"]')?.content || "",
-                canonicalUrl: document.querySelector('link[rel="canonical"]')?.href || "",
-              })`)) as Record<string, string>;
-
-              const authors: string[] = await view.evaluate(
-                `Array.from(document.querySelectorAll('meta[name="author"], meta[property="article:author"]')).map(el => el.content).filter(Boolean)`,
-              );
-
-              const fm = buildFrontmatter(
-                title,
-                description,
-                pageMeta,
-                authors,
-                normalizedUrl,
-                false,
-              );
-              await stream.write(`---\n${fm.join("\n")}\n---\n\n`);
-              frontmatterDone = true;
-            } catch {}
-          }
-
-          if (contentLen > 100) {
-            if (contentLen === lastLen) {
-              stableCount++;
-              if (stableCount >= stableThreshold) break;
-            } else {
-              stableCount = 0;
-              lastLen = contentLen;
-            }
-          }
-
-          await new Promise((r) => setTimeout(r, stableWindowMs));
-        }
-
-        if (!frontmatterDone) {
-          const fm = buildFrontmatter(
-            "",
-            "",
-            null,
-            [],
-            normalizedUrl,
-            partial,
-          );
-          await stream.write(`---\n${fm.join("\n")}\n---\n\n`);
-        }
-
-        const html = await view
-          .evaluate("document.documentElement.outerHTML")
-          .catch(() => "");
-        const text = await view
-          .evaluate("document.documentElement.innerText")
-          .catch(() => "");
-        const rawText =
-          (html && (await htmlParser(url, html).catch(() => ""))) || text || "";
-        await stream.write(rawText);
-      } finally {
-        view.close();
-      }
+    const view = new Bun.WebView({
+      backend: {
+        type: "chrome",
+        url: await getBrowserDebuggingURL(),
+      },
+      headless: true,
     });
+
+    try {
+      if (await navigateToURL(view, "about:blank", 5000)) {
+        partial = true;
+      }
+
+      const matchedUA = pluginRegistry.resolve(normalizedUrl);
+      if (matchedUA) {
+        await view.cdp("Network.setUserAgentOverride", {
+          userAgent: matchedUA,
+        });
+      }
+
+      if (await navigateToURL(view, normalizedUrl, navigateMs)) {
+        partial = true;
+      }
+
+      let lastLen = -1;
+      let stableCount = 0;
+      const pollStarted = Date.now();
+
+      while (true) {
+        const elapsed = Date.now() - pollStarted;
+        if (elapsed >= maxWaitMs) {
+          partial = true;
+          break;
+        }
+
+        let contentLen = 0;
+        try {
+          contentLen = await view.evaluate(
+            "document.body?.innerText?.length ?? 0",
+          );
+        } catch {}
+
+        if (contentLen > 100) {
+          if (contentLen === lastLen) {
+            stableCount++;
+            if (stableCount >= stableThreshold) break;
+          } else {
+            stableCount = 0;
+            lastLen = contentLen;
+          }
+        }
+
+        await new Promise((r) => setTimeout(r, stableWindowMs));
+      }
+
+      const title = await view.evaluate(`document.title
+          || document.querySelector('meta[property="og:title"]')?.content
+          || document.querySelector('meta[name="twitter:title"]')?.content
+          || document.querySelector('h1')?.textContent?.trim()
+          || document.querySelector('h2')?.textContent?.trim()
+          || ""`);
+      const description =
+        await view.evaluate(`document.querySelector('meta[name="description"]')?.content
+          || document.querySelector('meta[property="og:description"]')?.content
+          || document.querySelector('meta[name="twitter:description"]')?.content
+          || document.querySelector('p')?.textContent?.trim()
+          || ""`);
+      const pageMeta = (await view.evaluate(`({
+          siteName:
+            document.querySelector('meta[property="og:site_name"]')?.content ||
+            document.querySelector('meta[name="application-name"]')?.content ||
+            "",
+          pageType:
+            document.querySelector('meta[property="og:type"]')?.content || "",
+          publishedTime:
+            document.querySelector('meta[property="article:published_time"]')
+              ?.content ||
+            document.querySelector('meta[property="og:published_time"]')
+              ?.content ||
+            document.querySelector('meta[name="pubdate"]')?.content ||
+            "",
+          modifiedTime:
+            document.querySelector('meta[property="article:modified_time"]')
+              ?.content ||
+            document.querySelector('meta[property="og:updated_time"]')
+              ?.content ||
+            document.querySelector('meta[name="lastmod"]')?.content ||
+            "",
+          keywords:
+            document.querySelector('meta[name="keywords"]')?.content ||
+            document.querySelector('meta[property="article:tag"]')?.content ||
+            "",
+          section:
+            document.querySelector('meta[property="article:section"]')?.content ||
+            "",
+          canonicalUrl:
+            document.querySelector('link[rel="canonical"]')?.href || "",
+        })`)) as {
+        siteName: string;
+        pageType: string;
+        publishedTime: string;
+        modifiedTime: string;
+        keywords: string;
+        section: string;
+        canonicalUrl: string;
+      };
+
+      const authors: string[] = await view.evaluate(
+        `Array.from(document.querySelectorAll('meta[name="author"], meta[property="article:author"]')).map(el => el.content).filter(Boolean)`,
+      );
+      const html = await view.evaluate("document.documentElement.outerHTML");
+      const text = await view.evaluate("document.documentElement.innerText");
+
+      const rawText =
+        (await htmlParser(url, html as string)) || (text as string);
+      const frontmatter = buildFrontmatter(
+        title,
+        description,
+        pageMeta,
+        authors,
+        normalizedUrl,
+        partial,
+      );
+
+      const finalText = `---
+${frontmatter.join("\n")}
+---
+
+${rawText}
+          `;
+
+      return c.text(finalText);
+    } finally {
+      view.close();
+    }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return c.json(
