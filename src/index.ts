@@ -330,7 +330,7 @@ ${endpoints.map((e) => `- ${e}`).join("\n")}
 
 ## Example:
 
-${method.allowGet ? "- GET /https%3A%2F%2Fexample.com" : ""}
+${method.allowGet ? "- GET /https://example.com" : ""}
 ${method.allowPost ? '- POST /read with body { "url": "https://example.com" }' : ""}
 
 ## Health Check:
