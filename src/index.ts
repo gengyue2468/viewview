@@ -106,7 +106,10 @@ async function navigateToURL(
   try {
     await withTimeout(p, timeoutMs, "导航");
   } catch {
-    if (navFailed) throw navFailed;
+    // 导航失败或超时都不抛 — 页面可能有部分内容，继续提取
+    if (navFailed) {
+      console.warn(`导航到 ${target} 失败: ${navFailed.message}`);
+    }
     return true;
   }
 
@@ -165,12 +168,16 @@ async function readPage(c: any, url: string) {
           break;
         }
 
-        let contentLen = 0;
-        try {
-          contentLen = await view.evaluate(
-            "document.body?.innerText?.length ?? 0",
-          );
-        } catch {}
+let contentLen = 0;
+          try {
+            contentLen = await withTimeout(
+              view.evaluate(
+                "document.body?.innerText?.length ?? 0",
+              ),
+              5000,
+              "evaluate",
+            );
+          } catch {}
 
         if (contentLen > 100) {
           if (contentLen === lastLen) {
@@ -185,19 +192,19 @@ async function readPage(c: any, url: string) {
         await new Promise((r) => setTimeout(r, stableWindowMs));
       }
 
-      const title = await view.evaluate(`document.title
+      const title = await withTimeout(view.evaluate(`document.title
           || document.querySelector('meta[property="og:title"]')?.content
           || document.querySelector('meta[name="twitter:title"]')?.content
           || document.querySelector('h1')?.textContent?.trim()
           || document.querySelector('h2')?.textContent?.trim()
-          || ""`);
+          || ""`), 5000, "evaluate").catch(() => "");
       const description =
-        await view.evaluate(`document.querySelector('meta[name="description"]')?.content
+        await withTimeout(view.evaluate(`document.querySelector('meta[name="description"]')?.content
           || document.querySelector('meta[property="og:description"]')?.content
           || document.querySelector('meta[name="twitter:description"]')?.content
           || document.querySelector('p')?.textContent?.trim()
-          || ""`);
-      const pageMeta = (await view.evaluate(`({
+          || ""`), 5000, "evaluate").catch(() => "");
+      const pageMeta = (await withTimeout(view.evaluate(`({
           siteName:
             document.querySelector('meta[property="og:site_name"]')?.content ||
             document.querySelector('meta[name="application-name"]')?.content ||
@@ -227,7 +234,15 @@ async function readPage(c: any, url: string) {
             "",
           canonicalUrl:
             document.querySelector('link[rel="canonical"]')?.href || "",
-        })`)) as {
+        })`), 5000, "evaluate").catch(() => ({
+        siteName: "",
+        pageType: "",
+        publishedTime: "",
+        modifiedTime: "",
+        keywords: "",
+        section: "",
+        canonicalUrl: "",
+      }))) as {
         siteName: string;
         pageType: string;
         publishedTime: string;
@@ -237,11 +252,11 @@ async function readPage(c: any, url: string) {
         canonicalUrl: string;
       };
 
-      const authors: string[] = await view.evaluate(
+      const authors: string[] = await withTimeout(view.evaluate(
         `Array.from(document.querySelectorAll('meta[name="author"], meta[property="article:author"]')).map(el => el.content).filter(Boolean)`,
-      );
-      const html = await view.evaluate("document.documentElement.outerHTML");
-      const text = await view.evaluate("document.documentElement.innerText");
+      ), 5000, "evaluate").catch(() => [] as string[]);
+      const html = await withTimeout(view.evaluate("document.documentElement.outerHTML"), 5000, "evaluate").catch(() => "");
+      const text = await withTimeout(view.evaluate("document.documentElement.innerText"), 5000, "evaluate").catch(() => "");
 
       const rawText =
         (await htmlParser(url, html as string)) || (text as string);
