@@ -1,4 +1,5 @@
 import { Hono, MiddlewareHandler } from "hono";
+import { stream } from "hono/streaming";
 import { isValidURL, normalizeInputURL } from "./lib/valid";
 import { getBrowserDebuggingURL } from "./lib/browser";
 import { htmlParser } from "./lib/parser";
@@ -130,7 +131,7 @@ async function readPage(c: any, url: string) {
   try {
     const debugUrl = await getBrowserDebuggingURL();
 
-    return c.stream(async (stream) => {
+    return stream(c, async (stream) => {
       let partial = false;
 
       const view = new Bun.WebView({
